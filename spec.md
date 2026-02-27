@@ -1,0 +1,415 @@
+# Lyrics Manager Application
+
+## Overview
+A lyrics management application with a dark theme and purple highlights for organizing, editing, and playing song lyrics with customizable display settings.
+
+## Core Features
+
+### Main Interface (Songs Screen)
+- Dark theme with purple accent colors
+- Top navigation with "Lyrics Manager" title and descriptive subtitle
+- Dropdown menu in top-left with mode selection:
+  - Song Editor Mode
+  - Set List Mode
+  - Play Mode
+  - Song Mode
+  - Download Backup
+- Tab navigation for different sections:
+  - Songs (default active)
+  - Song Editor
+  - Set Lists
+  - Play
+- Searchable and sortable song list displaying:
+  - Song title
+  - Artist name
+  - Save button (violet) - exports individual song as .json file
+  - Edit button (red) - opens Song Editor
+  - Play button (green) - opens Play Mode
+  - Delete button (🗑️ emoji) - removes song with confirmation
+- Songs displayed in alphabetical order by title
+- Import/Export functionality for JSON data with File System Access API integration
+- Add Song button to create new entries
+- Export All Songs button that exports every song as individual `SONGTITLE_song.json` files to Documents/Lyrics Manager/Songs/ folder
+- Export All Set Lists button that exports every set list as individual `SETLISTNAME_setlist.json` files to Documents/Lyrics Manager/Set Lists/ folder
+- Automatic loading of all saved songs and set lists when the application starts
+
+### Persistent File Handle System
+- Cached file handle storage for automatic overwrite functionality
+- Once a user selects a file location for full data export or set list export, subsequent exports automatically overwrite that same file without prompting
+- No creation of numbered suffixes like `(1)`, `(2)` for repeat exports
+- File handle caching stored per export type (full data export, individual set list export)
+- Persistent file handle system maintains user's chosen export locations across sessions
+- Automatic overwrite behavior eliminates repeated file selection dialogs
+
+### File System Access API Integration
+- Primary file system operations use File System Access API's `showSaveFilePicker` for initial export operations
+- Persistent file handle caching for automatic overwrite on subsequent exports
+- Default save location: Documents/Lyrics Manager folder when available
+- Export operations overwrite existing files using cached file handles without creating numbered versions
+- User confirmation without rename overwrites existing file (no automatic numbering)
+- Manual renaming allowed for optional backups
+- Exported data includes both songs and set lists together in unified file
+- Graceful fallback to Downloads folder with same folder/subfolder structure on systems lacking File System Access API permissions
+- Clear subfolder organization:
+  - `/Documents/Lyrics Manager/Songs/` for individual song .json files
+  - `/Documents/Lyrics Manager/Set Lists/` for set list .json files
+- Cross-device reliability with consistent folder structure across different systems and browsers
+
+### Individual Song Export (.json files)
+- Save button next to each song in the Songs list interface
+- Violet-colored button matching the app's theme
+- Uses File System Access API `showSaveFilePicker` with default path "/Documents/Lyrics Manager/Songs"
+- Default filename format: `SONGTITLE_song.json`
+- Overwrites existing files without creating numbered versions
+- .json file contains complete song data including all formatting and metadata
+- Automatic filename generation based on song title and artist
+- Fallback to Downloads/Lyrics Manager/Songs/ folder when File System Access API unavailable
+
+### Batch Song Export
+- "Export All Songs" button on Songs page
+- Uses File System Access API for folder selection with default path "/Documents/Lyrics Manager/Songs"
+- Exports every song in the collection as individual `SONGTITLE_song.json` files
+- Overwrites existing files without creating numbered versions
+- Progress indicator for batch export operation
+- Each exported file contains complete song data in same format as individual exports
+- Fallback to Downloads/Lyrics Manager/Songs/ folder when File System Access API unavailable
+
+### Batch Set List Export
+- "Export All Set Lists" button on Set Lists page
+- Uses File System Access API for folder selection with default path "/Documents/Lyrics Manager/Set Lists"
+- Exports every set list in the collection as individual `SETLISTNAME_setlist.json` files
+- Overwrites existing files without creating numbered versions
+- Progress indicator for batch export operation
+- Each exported file contains complete set list data including song order and playback sequence
+- Fallback to Downloads/Lyrics Manager/Set Lists/ folder when File System Access API unavailable
+
+### Individual Song Import (.json and .lms files)
+- Enhanced Import menu with "Import Song Only" option
+- Supports both .json and .lms file formats for individual song imports
+- Maintains backward compatibility with existing .lms files
+- Multi-file selection capability using standard file dialog commands (Ctrl + A, Shift-Select)
+- Allows users to select and import multiple song files simultaneously
+- Imported songs automatically added to Songs list without overwriting existing entries
+- Maintains unique ID system - generates new unique ID for imported songs to prevent conflicts
+- Preserves all song data including metadata, style settings, bold formatting, text color changes, and lines per scroll setting from imported files
+- Data safety: skips overwriting existing songs unless user confirms or updates the same title intentionally
+- Import functionality works correctly with files exported via File System Access API
+
+### Export All Data Feature
+- "Export All Data" option in dropdown menu positioned beneath "Song Mode"
+- Uses File System Access API `showSaveFilePicker` with default path "/Documents/Lyrics Manager"
+- Default filename "Lyrics Manager.json" (user can edit before saving)
+- Persistent file handle caching for automatic overwrite on subsequent full data exports
+- Generates complete backup JSON file containing all songs, set lists, and app settings
+- Uses structured file system format for complete application state
+- Fallback to Downloads/Lyrics Manager/ folder when File System Access API unavailable
+- Loading logic imports correctly from chosen export path and restores all songs and set lists on startup
+
+### Song Editor Mode
+- Fixed lyrics editor interface with stable cursor positioning and selection handling that prevents cursor jumping during text input and editing
+- Enhanced text selection preservation during color changes with fixed color selection logic
+- Text selection remains focused and active after applying color changes without duplication or loss of selection
+- Caret position preservation during keystrokes, color changes, and formatting updates
+- Optimized re-rendering system that prevents unnecessary updates during typing or formatting changes to maintain stable input performance
+- Real-time visual formatting directly in the editor supporting:
+  - Bold text styling
+  - Font size adjustments
+  - Instant text color changes that apply immediately when color is selected with stable cursor positioning and maintained text selection
+  - Text alignment options with center-alignment as default
+- Enhanced color formatting functionality with proper serialization of inline styling (colorRanges) on save and accurate restoration on load
+- Rebuilt color range logic before saving that maintains correct mappings between text and color for consistent display in both editor and play mode
+- Fixed save logic that correctly serializes and preserves all inline color formatting data, ensuring text color changes persist consistently between sessions
+- Songs with formatted text reload in editor and play mode with all color and formatting intact exactly as applied
+- Fixed cursor functionality that maintains active cursor position and selection capabilities after re-selecting and re-coloring text
+- Improved color selection logic that preserves text selection and cursor position during color changes, ensuring color formatting is applied instantly and reliably saved to colorRanges
+- Default formatting automatically applied when pasting or creating new songs:
+  - Bold styling enabled by default
+  - Yellow text color as default
+  - Center-aligned text as default
+  - Consistent font size and alignment
+- Form interface for song management with improved layout:
+  - Song Title
+  - Artist
+  - Fixed Song Text editor with stable cursor handling, maintained text selection after color changes, and reliable color formatting persistence
+  - Scroll Speed Control (single slider 0-100 where 0 = stopped and 100 = fastest)
+  - Lines per Scroll (numeric input 1-20, default = 1) - positioned beside Scroll Speed slider
+  - Tempo Speed (BPM)
+  - Background Color
+  - Text Color
+  - Text Size
+  - Bold Toggle - applies bold styling to entire lyrics text
+  - Text Color Change Feature - allows selection of text sections and instant application of different text colors with stable cursor control and maintained selection focus
+- Placeholder commands visible and editable in editor:
+  - Text like `[N]` (e.g., `[2]`, `[5]`, `[10]`) appears as editable text in the lyrics editor
+  - These placeholders remain in the saved lyric text exactly as typed
+- Play button at the bottom of the Song Editor allowing instant preview of the current song in Play Mode
+- Save, Cancel, and Clear Form buttons
+- Clear Form button resets all fields (lyrics, title, colors, sliders, settings, and lines per scroll) back to default values
+- Supports both creating new songs and editing existing ones
+- Immutable internal ID system ensures each song has a permanent, unchangeable unique identifier
+- When editing existing songs, only the song with the matching ID is updated
+- When creating new songs, a new unique ID is generated and the song is added to the collection
+- Song titles can be changed without affecting the unique ID or creating duplicates
+- Enhanced title conflict handling with reliable save system that fully captures all data
+- Confirmation dialog appears before saving when title conflicts are detected
+- Save operation writes individual .json file for the song using File System Access API, adds it to Songs list, and does not trigger full export
+- Fixed save functionality prevents "Failed to save song" errors through improved data capture and validation
+
+### Song Deletion
+- Delete button (🗑️ emoji) available in songs list next to Edit and Play buttons
+- Confirmation dialog displays "Are you sure you want to delete this song?" before removal
+- Songs list automatically refreshes after deletion to reflect changes immediately
+
+### Set List Mode
+- Display all available songs with ability to add/remove songs directly from the song list
+- Create and manage multiple named set lists with rename functionality
+- Set list creation interface with "New" button to create new set lists
+- Import Set List functionality beside the "+ New" button supporting importing one or multiple JSON set list files
+- Set list editing interface with:
+  - Set list name editing field
+  - "View & Edit Songs" button that opens the add/remove/reorder modal directly
+  - Play button (green) - launches the set list in Play Mode and plays songs sequentially in playlist order
+  - Cancel buttons for set list operations
+- Accurate song count indicator under each set list that displays the correct number of songs in the set list
+- Individual set list export with File System Access API and filename format: `<SetListName>_setlist.json`
+- Song selection modal/panel that displays the complete songs list when editing a set list
+- Songs in the selection modal show checkboxes or selection indicators to add/remove from the active set list
+- Fixed reorder functionality in the modal with:
+  - Corrected slot number handling for manual position changes including multi-digit entries
+  - Reliable reordering to intended positions with consistent behavior
+  - Re-enabled arrow buttons that work reliably after manual number changes
+  - Arrow buttons to move songs up/down in the list while maintaining correct numbering behavior
+  - Manual song number editing for direct reordering with proper validation
+- Playlist order updates and persists properly, defining playback order in Play Mode
+- Real-time updates when songs are added or removed from set lists
+- Reorder songs within set lists using both numeric input and arrow buttons for efficient reordering
+- Save and load set lists with immediate persistence of changes
+- Full editing capabilities for set list management
+- Compatibility for loading existing older set lists or files renamed to `.json`
+- Fixed set list saving functionality ensures set list contents (songs and positions) persist correctly across sessions
+- Streamlined set list card interface with redundant "Save" buttons removed from within the cards, keeping only the main Save and Done buttons
+
+### Set List Edit Dialog Export Feature
+- Dedicated Export button inside the Set List Edit dialog positioned beside the Save button
+- Export button exports only the specific set list being edited as a JSON file named `SetListName_setlist.json`
+- Uses persistent file handle caching system stored per set list for automatic overwrite functionality
+- Export button styling consistent with Save button including hover effects
+- Optional export animation with brief progress pulse or icon change for visual feedback
+- Confirmation toast notification displays after successful export (e.g., "Exported to SetLists/[SetListName]_setlist.json")
+- Toast notification fades automatically after a few seconds
+- Export functionality integrated into the set list editing workflow for immediate export access
+
+### Play Mode
+- Full-screen lyrics display with scrolling
+- Song information line displaying "Title – Artist – Song X of X" positioned at the very top of the page in a single horizontal line
+- Song information line styled with purple highlights matching the app theme
+- Transport controls (Play/Stop/Tempo) fixed at the bottom of the screen with no transparent overlap
+- Lyrics text appears only above the transport bar with proper spacing
+- Lyrics scrolling behavior starts from the middle of the visible area rather than the top
+- Lyrics text never scrolls behind or through the title area at the top or transport controls at the bottom
+- Lyrics text displayed with center-alignment by default
+- Fixed Play Mode cache handling that always refreshes directly from the backend/editor state, ensuring no duplication or stale color data
+- Placeholder parsing feature that dynamically converts placeholder commands during display:
+  - Text like `[N]` (e.g., `[2]`, `[5]`, `[10]`) is interpreted as invisible commands to insert N blank lines
+  - Placeholders are not visible in Play Mode but create the specified number of blank lines between lyric lines
+  - Original lyric text with placeholders remains unchanged in storage
+  - Conversion happens only during Play Mode display rendering
+- Tempo-based auto-scroll functionality:
+  - Uses existing Tempo (BPM) value and Scroll Speed slider (0-100) to determine scroll frequency
+  - Calculates beats per scroll where Scroll Speed = 1 triggers one scroll every ~8 beats, scaled proportionally up to 100 for faster response
+  - Scrolls one lyric line per beat event multiplied by the user's selected "Lines per Scroll"
+- Lines per Scroll control (numeric input 1-20, default = 1) - positioned beside scroll speed control
+- Auto-scroll function moves the specified number of lyric lines per scroll increment based on Lines per Scroll setting
+- Play/Stop controls for scrolling
+- Mouse scrolling enabled in Play Mode only while playback is paused
+- Resume functionality continues from the last scroll position when playback resumes
+- Visual tempo indicator that flashes on beat based on tempo setting
+- Uses song's custom background color, text color, and text size
+- Displays bold styling when enabled for the song
+- Renders text color changes for different lyrics sections as configured in Song Editor with all formatting intact exactly as applied
+- Preserves all text formatting including bold and text color changes during playback
+- Follows set list playback order as defined by manual number positioning in set list editor
+- Sequential playback of set list songs when launched from Set List Play button
+
+## Data Management
+- All songs stored in backend with persistent map storage using immutable unique IDs
+- Each song has an immutable unique ID that is generated once and never changes
+- Enhanced song storage with fixed save logic that correctly serializes inline color formatting (colorRanges) and fully captures all content and formatting data
+- Songs are stored as separate entries in a growing collection that preserves all data including text color changes with proper serialization
+- Song editing operations only modify the specific song matching the provided immutable ID
+- New songs are always appended to the collection with new unique IDs
+- Enhanced title-based conflict detection with confirmation system
+- When title conflicts occur, backend supports both replace existing and save as new operations with user confirmation
+- Songs contain fields: immutable unique ID, title, artist, lyrics text (including placeholder commands), display settings (colors, text size, scroll speed, tempo, lines per scroll), bold styling flag, properly serialized text color change data (colorRanges) for lyrics sections, default formatting settings including center-alignment
+- Songs displayed in alphabetical order by title in the frontend
+- Set lists stored in backend with song references, ordering, and playback sequence
+- Fixed set list data handling with corrected slot number management for reliable reordering
+- Set list data includes song IDs, their relationships, and proper ordering for playback in Play Mode
+- Accurate song count tracking for each set list stored in backend
+- App-wide settings stored in backend
+- File System Access API integration for structured file system export functionality
+- Export includes File System Access API save dialog with path selection and overwrite handling without automatic number suffixes
+- Individual song save operations write .json files using File System Access API without triggering full export
+- Individual set list save operations write `<SetListName>_setlist.json` files with set list data including song order using File System Access API
+- Persistent file handle storage for automatic overwrite functionality across export operations
+- Backend and frontend synchronization ensures full app state restoration via import from any supported format
+- Persistent storage maintains data integrity with stable ID-based song management and enhanced save system with proper color formatting serialization
+- Song collection grows indefinitely without data loss or replacement
+- Individual song export generates .json files containing complete song data in JSON format including properly serialized text color change data (colorRanges) and lines per scroll setting
+- Individual song import from both .json and .lms files with automatic unique ID generation to prevent conflicts
+- Individual set list import from JSON files with compatibility for older formats
+- Multi-file import capability with data safety to prevent overwrites unless confirmed
+- Cross-device file system compatibility ensures exported files can be properly imported and loaded on startup with all formatting intact
+- Default formatting settings stored and applied automatically for new songs including center-alignment
+- Enhanced save functionality that correctly serializes inline color formatting (colorRanges) and fully captures all content and formatting with consistent reload behavior
+- Automatic data loading on application startup to restore all saved songs and set lists
+- Graceful fallback file system handling for browsers without File System Access API support
+
+## Backend Operations
+- CRUD operations for songs using immutable unique ID-based storage system
+- Song creation operations that generate new immutable unique IDs and append to collection
+- Song editing operations that only modify songs matching the provided immutable unique ID
+- Fixed save operations with corrected serialization logic that properly handles inline color formatting (colorRanges) and fully preserves all content and formatting data
+- Rebuilt color range logic operations before saving that maintain correct mappings between text and color for consistent display
+- Enhanced title conflict detection with reliable save system
+- Support for both replace existing song and save as new song operations when title conflicts occur with user confirmation
+- Song deletion operations that remove specific songs by ID from persistent storage
+- Immutable unique ID generation system that ensures no conflicts or overwrites
+- File System Access API integration for individual song export operations that generate .json file data for specific songs including properly serialized text color change metadata (colorRanges) and lines per scroll setting
+- File System Access API integration for batch song export operations that generate multiple .json files for all songs simultaneously to Documents/Lyrics Manager/Songs/ folder with overwrite behavior
+- File System Access API integration for batch set list export operations that generate multiple .json files for all set lists simultaneously to Documents/Lyrics Manager/Set Lists/ folder with overwrite behavior
+- Individual song import operations that process both .json and .lms files and add songs with new unique IDs
+- File System Access API integration for individual set list export operations that generate .json file data for specific set lists including song order and playback sequence
+- Individual set list import operations that process JSON set list files and add set lists with proper song references and ordering
+- Multi-file import processing with validation and conflict prevention
+- Storage and retrieval of scroll speed settings (0-100 numeric control)
+- Storage and retrieval of lines per scroll settings (1-20 numeric values, default = 1)
+- Storage and retrieval of bold styling settings for songs
+- Fixed storage and retrieval of properly serialized text color change data (colorRanges) for lyrics sections with consistent formatting preservation
+- Storage and retrieval of default formatting settings (bold on, yellow color, center-alignment)
+- CRUD operations for set lists with immediate persistence and proper update handling
+- Set list song management operations for adding and removing songs from set lists
+- Fixed set list ordering operations with corrected slot number handling for reliable manual reordering and arrow button functionality
+- Accurate song count calculation and storage for each set list
+- Backend operations to retrieve songs list for set list editing modal
+- CRUD operations for app-wide settings
+- File System Access API backend support for structured file system handling:
+  - Full app backup data generation with custom paths and filenames (default: "Lyrics Manager.json") with overwrite behavior
+  - Individual song file data generation with path selection and overwrite behavior
+  - Individual set list file data generation with path selection and overwrite behavior
+  - Batch song export data generation for Documents/Lyrics Manager/Songs/ folder with overwrite behavior
+  - Batch set list export data generation for Documents/Lyrics Manager/Set Lists/ folder with overwrite behavior
+- Persistent file handle caching operations for automatic overwrite functionality
+- File handle storage and retrieval per export type (full data export, individual set list export)
+- File System Access API backend support for save dialog path validation and file handling without automatic number suffixes
+- File overwrite confirmation and rename handling
+- Comprehensive import/export handling all application data (songs with formatting and lines per scroll, set lists with full song relationships and playbook order, settings) in unified JSON format
+- File System Access API backend support for backup data generation operations with custom filename and path support and overwrite behavior
+- Search and sorting functionality for songs list
+- Data synchronization routines for maintaining consistency between backend and frontend
+- Fixed storage system that preserves all song data, set list data, and formatting across operations with corrected serialization logic for color formatting (colorRanges)
+- Cross-device file system compatibility with data serialization/deserialization to ensure proper import functionality and consistent color formatting persistence with exact reload behavior
+- Set list data integrity operations with corrected slot number management to ensure songs are correctly stored and retrieved
+- Automatic data loading operations that restore all saved songs and set lists when the application starts
+- Enhanced error handling to prevent "Failed to save song" errors through improved validation and data capture
+- Graceful fallback file system operations for browsers without File System Access API support
+
+## Frontend Operations
+- Songs list displays songs in alphabetical order by title
+- Delete button uses 🗑️ emoji instead of trash icon image
+- Save button for individual song export with violet styling matching app theme
+- Export All Songs button with batch export functionality to Documents/Lyrics Manager/Songs/ folder using File System Access API with overwrite behavior
+- Export All Set Lists button with batch export functionality to Documents/Lyrics Manager/Set Lists/ folder using File System Access API with overwrite behavior
+- Play button for each set list with green styling that launches Play Mode with sequential playback
+- File System Access API integration for individual song export functionality with `showSaveFilePicker` and automatic .json file download with overwrite behavior
+- File System Access API integration for individual set list export functionality with `showSaveFilePicker` and automatic .json file download with overwrite behavior
+- Enhanced Import menu with "Import Song Only" option for both .json and .lms file uploads
+- Import Set List functionality beside "+ New" button supporting multiple JSON set list file uploads
+- Multi-file selection capability in file dialog with standard commands (Ctrl + A, Shift-Select)
+- Individual song import processing with automatic addition to Songs list
+- Individual set list import processing with automatic addition to Set Lists and proper song reference handling
+- Automatic refresh of songs list after song creation, update, deletion, and individual imports using updated useQueries hooks
+- Real-time synchronization with backend data changes
+- Enhanced title conflict confirmation dialog with "Replace existing song" and "Save as new" options using reliable save system
+- File System Access API integration for "Save As" dialog system with:
+  - Default path "/Documents/Lyrics Manager"
+  - Default filename "Lyrics Manager.json" for full backups (Export All Data)
+  - Persistent file handle caching for automatic overwrite behavior
+  - Automatic folder creation prompts
+- Enhanced export functionality with File System Access API save dialog system and overwrite behavior
+- Custom filename and path selection with structured file system organization
+- File System Access API integration for Export All Data functionality with `showSaveFilePicker` and overwrite behavior for "Lyrics Manager.json"
+- Direct file download to user's device for backup files, individual .json files, and set list files using File System Access API with overwrite behavior
+- Import functionality that restores entire application state exactly as exported including formatting and set list order
+- Set list editing operations (add, remove, reorder) with proper persistence verification
+- "View & Edit Songs" button that opens the add/remove/reorder modal directly instead of separate "View Songs" button
+- Accurate song count display under each set list that matches the correct number of songs
+- Fixed reorder modal with:
+  - Corrected slot number handling for manual position changes including multi-digit entries
+  - Reliable reordering to intended positions with consistent behavior
+  - Re-enabled arrow buttons that work reliably after manual number changes
+  - Arrow buttons for moving songs up/down in the list while maintaining correct numbering behavior
+  - Manual song number editing for direct reordering with proper validation
+- Playlist order persistence and proper updating when manual number input or arrow buttons are used
+- Immediate saving of set list changes when songs are added, removed, or reordered
+- Confirmation dialogs for song deletion operations
+- Song editing interface that preserves immutable unique IDs and only updates matching songs
+- Songs list maintains complete integrity across all operations, reloads, and imports
+- Frontend tracks songs by immutable unique ID to ensure proper editing and display consistency
+- Scroll speed control interface with numeric slider (0-100)
+- Lines per Scroll numeric input interface (1-20, default = 1) positioned beside scroll speed controls in both Song Editor and Play Mode
+- Tempo-based auto-scroll implementation using BPM and scroll speed calculations
+- Auto-scroll function integration with Lines per Scroll setting to move specified number of lyric lines per scroll increment
+- Fixed stable lyrics editor interface with:
+  - Stable cursor positioning and selection handling that preserves caret position during typing and prevents cursor jumping
+  - Enhanced text selection preservation during color changes with fixed color selection logic
+  - Text selection remains focused and active after applying color changes without duplication or loss of selection
+  - Optimized re-rendering system that prevents unnecessary updates during typing or formatting changes
+  - Instant color formatting that applies immediately when color is selected with maintained cursor stability and selection focus
+  - Bold text styling directly in editor
+  - Font size adjustments in real-time
+  - Text alignment options with center-alignment as default
+  - Fixed cursor functionality that maintains active cursor position and selection capabilities after re-selecting and re-coloring text
+  - Improved color selection logic that preserves text selection and cursor position during color changes, ensuring color formatting is applied instantly and reliably saved to colorRanges
+- Fixed save interface with corrected serialization logic that properly handles inline color formatting (colorRanges) and fully preserves all content and formatting with consistent reload behavior
+- Rebuilt color range logic interface before saving that maintains correct mappings between text and color for consistent display in both editor and play mode
+- Default formatting application system:
+  - Automatically applies bold styling when creating new songs
+  - Sets yellow text color as default for new songs
+  - Applies center-alignment as default for new songs
+  - Applies consistent formatting when pasting content
+- Text color change interface for selecting and instantly applying different text colors to different lyrics sections with stable cursor control and maintained selection focus
+- Play button interface at the bottom of the Song Editor allowing instant preview of the current song in Play Mode
+- Play Mode rendering of bold styling and text color changes as configured with all formatting intact exactly as applied
+- Play Mode displays lyrics with center-alignment by default
+- Fixed Play Mode cache handling interface that always refreshes directly from the backend/editor state, ensuring no duplication or stale color data
+- Play Mode placeholder parsing that dynamically converts `[N]` commands to N blank lines during display without affecting stored text
+- Play Mode follows set list playbook order as defined by manual number positioning
+- Play Mode transport controls fixed at the bottom of screen with no transparent overlap
+- Play Mode lyrics text appears only above the transport bar with proper spacing
+- Play Mode song information line positioned at the very top of the page in a single horizontal line format displaying "Title – Artist – Song X of X" with purple styling
+- Play Mode lyrics scrolling starts from the middle of the visible area and never scrolls behind or through the title area or transport controls
+- Play Mode mouse scrolling enabled only while playback is paused
+- Play Mode resume functionality continues from the last scroll position when playback resumes
+- Sequential set list playback functionality when launched from Set List Play button
+- Clear Form functionality that resets all editor fields including lines per scroll to default values
+- File System Access API integration for individual song save operations that write .json files without triggering full export and with overwrite behavior
+- File System Access API integration for individual set list save operations that write .json files without triggering full export and with overwrite behavior
+- Set List Edit Dialog Export functionality with:
+  - Dedicated Export button positioned beside Save button in the edit dialog
+  - Export button styling consistent with Save button including hover effects
+  - Optional export animation with brief progress pulse or icon change for visual feedback
+  - Persistent file handle caching per set list for automatic overwrite functionality
+  - Confirmation toast notification that displays after successful export and fades automatically after a few seconds
+- Compatibility handling for loading older set list formats and renamed .json files
+- App content displayed in English language
+- File System Access API integration for structured file system interface with improved save dialog and folder creation prompts
+- Cross-device file system compatibility with import data processing to ensure proper loading of exported files from all supported formats with exact formatting preservation
+- Fixed set list data handling with corrected slot number management to ensure songs are correctly stored and retrieved
+- Fixed save system interface that prevents "Failed to Save" errors through improved data capture and immutable ID management with proper color formatting serialization (colorRanges)
+- Streamlined set list card interface with redundant "Save" buttons removed from within the cards, keeping only the main Save and Done buttons
+- Songs with formatted text reload in editor and play mode with all color and formatting intact exactly as before editing
+- Automatic loading of all saved songs and set lists when the application starts
+- Enhanced error handling and validation to prevent data loss during song editing and creation
+- Graceful fallback to Downloads folder with same folder/subfolder structure on systems lacking File System Access API permissions
+- Cross-device reliability with consistent folder structure across different systems and browsers

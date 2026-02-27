@@ -1,0 +1,34 @@
+[
+  {
+    "id": "1",
+    "title": "a",
+    "artist": "a",
+    "lyrics": "a aaa",
+    "createdAt": "2026-01-01T19:53:08.606Z",
+    "updatedAt": "2026-01-01T19:55:05.185Z"
+  },
+  {
+    "id": "2",
+    "title": "b",
+    "artist": "b",
+    "lyrics": "bbbb",
+    "createdAt": "2026-01-01T19:53:33.766Z",
+    "updatedAt": "2026-01-01T19:54:17.074Z"
+  },
+  {
+    "id": "3",
+    "title": "The Wizard",
+    "artist": "BLACK SABBATH",
+    "lyrics": "Misty morning, Clouds in the sky\nWithout warning, A wizard walks by\nCasting his shadow, Weaving his spell\nFlowing clothes, Tinkling bell\n\nNever talking, Just keeps walking\nSpreading his magic\n\nEvil power disappears, Demons worry\nwhen the wizard is near\nHe turns tears into joy\nEveryone’s happy when the wizard walks by\nNever talking, Just keeps walking\nSpreading his magic\n\n                 SOLO2\nSun is shining, Clouds have gone by\nAll the people, Give a happy sigh\nHe has passed by, Giving his sign\nLeft all the people, Feeling so fine\n\nNever talking, Just keeps walking\nSpreading his magic",
+    "createdAt": "2026-01-01T20:03:35.405Z",
+    "updatedAt": "2026-01-01T20:03:35.405Z"
+  },
+  {
+    "id": "4",
+    "title": "NIB",
+    "artist": "BLACK SABBATH",
+    "lyrics": "Some people say my love cannot be true\nPlease believe me my love and I’ll show you\nI will give you those things\nyou thought unreal\nThe sun the moon the stars all bear my seal\n\nFollow me now and you will not regret\nLeaving the life you led before we met\nYou are the first to have this love of mine\nForever with me ’till the end of time\n\nYour love for me has just got to be real\nBefore you know the way I’m going to feel\nI’m going to feel, I’m going to feel\n\nNow I have you with me under my power\nOur love grows stronger now with every hour\nLook into my eyes you’ll see who I am\nMy name is Lucifer please take my hand  \n        Solo\n\nFollow me now and you will not regret\nLeaving the life you led before we met\nYou are the first to have this love of mine\nForever with me ’till the end of time\n\nYour love for me has just got to be real\nBefore you know the way I’m going to feel\nI’m going to feel, I’m going to feel\n\nNow I have you with me under my power\nOur love grows stronger now with every hour\nLook into my eyes you’ll see who I am\nMy name is Lucifer please take my hand\n                 end solo ",
+    "createdAt": "2026-01-01T20:09:54.870Z",
+    "updatedAt": "2026-01-01T20:09:54.870Z"
+  }
+]

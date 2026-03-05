@@ -5,12 +5,12 @@
   },
   "components": {
     "blob-storage": "4.0.0",
-    "core-infrastructure": "1.0.0",
+    "core-infrastructure": "1.0.3",
     "shadcn-ui": "1.0.0",
-    "build-template-react": "1.0.0",
+    "build-template-react": "1.1.0",
     "initial-app": "1.0.0"
   },
-  "aiCoreVersion": "0.18.1",
+  "aiCoreVersion": "0.dev",
   "motokoVersion": "1.0.0-beta",
   "coreLibVersion": "implicits-20",
   "tags": []

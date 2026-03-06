@@ -21,47 +21,65 @@ interface PlayTabProps {
   previewSong?: Song;
 }
 
-function applyTextColorChanges(
+interface TextSegment {
+  text: string;
+  color?: string; // undefined = default color
+}
+
+function splitTextIntoSegments(
   text: string,
   colorRanges: ColorRange[],
-): React.ReactElement[] {
+): TextSegment[] {
   if (colorRanges.length === 0) {
-    return [<span key="0">{text}</span>];
+    return [{ text }];
   }
 
-  const sortedColorRanges = [...colorRanges].sort(
+  const sorted = [...colorRanges].sort(
     (a, b) => Number(a.start) - Number(b.start),
   );
 
-  const elements: React.ReactElement[] = [];
+  const segments: TextSegment[] = [];
   let lastIndex = 0;
 
-  for (const colorRange of sortedColorRanges) {
+  for (const colorRange of sorted) {
     const start = Number(colorRange.start);
     const end = Number(colorRange.end);
 
+    if (start > text.length) break;
     if (start > lastIndex) {
-      elements.push(
-        <span key={`text-${lastIndex}-${start}`}>
-          {text.substring(lastIndex, start)}
-        </span>,
-      );
+      segments.push({ text: text.substring(lastIndex, start) });
     }
 
-    elements.push(
-      <span key={`color-${start}-${end}`} style={{ color: colorRange.color }}>
-        {text.substring(start, end)}
-      </span>,
-    );
+    segments.push({
+      text: text.substring(start, Math.min(end, text.length)),
+      color: colorRange.color,
+    });
 
-    lastIndex = end;
+    lastIndex = Math.min(end, text.length);
   }
 
   if (lastIndex < text.length) {
-    elements.push(<span key="text-end">{text.substring(lastIndex)}</span>);
+    segments.push({ text: text.substring(lastIndex) });
   }
 
-  return elements;
+  return segments;
+}
+
+function renderSegments(segments: TextSegment[]): React.ReactElement[] {
+  let offset = 0;
+  return segments.map((seg) => {
+    const key = `seg-${offset}`;
+    offset += seg.text.length;
+    const expanded = parsePlaceholders(seg.text);
+    if (seg.color) {
+      return (
+        <span key={key} style={{ color: seg.color }}>
+          {expanded}
+        </span>
+      );
+    }
+    return <span key={key}>{expanded}</span>;
+  });
 }
 
 function parsePlaceholders(text: string): string {
@@ -133,13 +151,15 @@ export default function PlayTab({
   const renderedLyrics = useMemo(() => {
     if (!song) return null;
 
-    // Parse placeholders to convert [N] to blank lines
-    const parsedLyrics = parsePlaceholders(
-      song.lyrics || "No lyrics available",
-    );
+    const rawLyrics = song.lyrics || "No lyrics available";
 
-    // Apply color formatting from colorRanges - always fresh from current song
-    return applyTextColorChanges(parsedLyrics, song.colorRanges || []);
+    // Step 1: Split raw lyrics into segments using colorRanges (before placeholder expansion).
+    // colorRange offsets are stored against the raw text, so we must apply them here first.
+    const segments = splitTextIntoSegments(rawLyrics, song.colorRanges || []);
+
+    // Step 2: Render each segment — placeholder expansion happens per-segment so
+    // no character-position drift can occur across segment boundaries.
+    return renderSegments(segments);
   }, [song]);
 
   // Parse numerator from time signature string e.g. "4/4" → 4, "6/8" → 6
@@ -169,9 +189,13 @@ export default function PlayTab({
       setCurrentBeat(1);
 
       tempoIntervalRef.current = window.setInterval(() => {
+        // Read current beat, apply all visuals BEFORE advancing
         const beat = currentBeatRef.current;
 
-        // Scroll on beat 1 FIRST — fires at the very start of beat 1
+        // Update displayed beat immediately so flash syncs with the correct circle
+        setCurrentBeat(beat);
+
+        // Scroll on beat 1 — fires at the very start of the interval tick
         if (beat === 1) {
           const scrollAmount = lineHeight * linesPerScroll;
           setScrollPosition((prev) => prev + scrollAmount);
@@ -181,10 +205,9 @@ export default function PlayTab({
         setBeatFlash(true);
         setTimeout(() => setBeatFlash(false), 120);
 
-        // Advance beat
+        // Advance beat counter AFTER visuals so next tick starts correct
         const nextBeat = beat >= timeSigNumerator ? 1 : beat + 1;
         currentBeatRef.current = nextBeat;
-        setCurrentBeat(nextBeat);
       }, tempoInterval);
     }
 

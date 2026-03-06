@@ -30,6 +30,7 @@ import {
   Type,
   X,
 } from "lucide-react";
+import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { EditorState } from "../App";
 import type { Song } from "../backend";
@@ -109,6 +110,7 @@ export default function SongEditorTab({
   } | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const selectionRef = useRef<{ start: number; end: number } | null>(null);
 
   useEffect(() => {
@@ -184,6 +186,60 @@ export default function SongEditorTab({
     },
     [],
   );
+
+  // Build colored segments for the live overlay from current lyrics + colorHighlights.
+  // Uses same logic as PlayTab but operates on editor state so colors show immediately.
+  const overlayContent = useCallback(() => {
+    if (colorHighlights.length === 0) {
+      return <span style={{ color: textColor }}>{lyrics}</span>;
+    }
+
+    const sorted = [...colorHighlights]
+      .map((h) => ({
+        start: Number(h.start),
+        end: Number(h.end),
+        color: h.color,
+      }))
+      .filter((h) => h.start < h.end && h.start >= 0 && h.end <= lyrics.length)
+      .sort((a, b) => a.start - b.start);
+
+    const elements: React.ReactNode[] = [];
+    let lastIndex = 0;
+
+    for (const h of sorted) {
+      if (h.start > lastIndex) {
+        elements.push(
+          <span key={`t-${lastIndex}`} style={{ color: textColor }}>
+            {lyrics.substring(lastIndex, h.start)}
+          </span>,
+        );
+      }
+      elements.push(
+        <span key={`c-${h.start}`} style={{ color: h.color }}>
+          {lyrics.substring(h.start, h.end)}
+        </span>,
+      );
+      lastIndex = h.end;
+    }
+
+    if (lastIndex < lyrics.length) {
+      elements.push(
+        <span key="t-end" style={{ color: textColor }}>
+          {lyrics.substring(lastIndex)}
+        </span>,
+      );
+    }
+
+    return <>{elements}</>;
+  }, [colorHighlights, lyrics, textColor]);
+
+  // Keep overlay scroll position in sync with textarea
+  const handleTextareaScroll = useCallback(() => {
+    if (textareaRef.current && overlayRef.current) {
+      overlayRef.current.scrollTop = textareaRef.current.scrollTop;
+      overlayRef.current.scrollLeft = textareaRef.current.scrollLeft;
+    }
+  }, []);
 
   const handleSaveClick = async () => {
     if (!title.trim()) {
@@ -542,21 +598,49 @@ export default function SongEditorTab({
 
           {/* Lyrics textarea — toolbar is sticky above the ScrollArea */}
           <div className="space-y-2">
-            {/* Stable textarea for editing - always visible and functional */}
-            <div className="relative">
-              <textarea
-                ref={textareaRef}
-                value={lyrics}
-                onChange={handleLyricsChange}
-                className="w-full min-h-[500px] p-4 rounded-md border font-mono focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+            {/* Overlay + textarea combo for live color preview */}
+            <div className="relative" style={{ minHeight: 500 }}>
+              {/* Color overlay — renders colored spans, sits behind the textarea */}
+              <div
+                ref={overlayRef}
+                aria-hidden="true"
+                className="absolute inset-0 p-4 rounded-md border border-transparent font-mono overflow-hidden pointer-events-none"
                 style={{
                   backgroundColor: backgroundColor,
-                  color: textColor,
                   fontSize: `${textSize}px`,
                   fontWeight: isBold ? "bold" : "normal",
                   textAlign: textAlign,
                   whiteSpace: "pre-wrap",
                   wordWrap: "break-word",
+                  lineHeight: "inherit",
+                  zIndex: 1,
+                  // Exact same box model as textarea so text positions align
+                  boxSizing: "border-box",
+                }}
+              >
+                {overlayContent()}
+                {/* trailing space to prevent overlay from being shorter than textarea */}
+                {"\n"}
+              </div>
+
+              {/* The actual editable textarea — transparent text so overlay shows through */}
+              <textarea
+                ref={textareaRef}
+                value={lyrics}
+                onChange={handleLyricsChange}
+                onScroll={handleTextareaScroll}
+                className="relative w-full min-h-[500px] p-4 rounded-md border font-mono focus:outline-none focus:ring-2 focus:ring-primary resize-none bg-transparent"
+                style={{
+                  backgroundColor: "transparent",
+                  color: colorHighlights.length > 0 ? "transparent" : textColor,
+                  caretColor: textColor,
+                  fontSize: `${textSize}px`,
+                  fontWeight: isBold ? "bold" : "normal",
+                  textAlign: textAlign,
+                  whiteSpace: "pre-wrap",
+                  wordWrap: "break-word",
+                  zIndex: 2,
+                  position: "relative",
                 }}
                 placeholder="Type or paste lyrics here..."
               />

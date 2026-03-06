@@ -1,38 +1,23 @@
 # Lyrics Manager Application
 
 ## Current State
-- Play Mode has a beat-based transport with time signature selector, large beat-1 circle, beat grid, and BPM display.
-- The scroll event fires inside the interval tick AFTER updating the beat counter, meaning it appears to scroll on beat 2 visually.
-- SongEditorTab has a formatting toolbar (Bold, Size, Color, Align) rendered inside a ScrollArea, so it scrolls away with the lyrics textarea.
-- Under "Edit Song" heading in edit mode, there is a description: "Make changes to the song details below. Placeholders like [2] or [5] will create blank lines in Play Mode." — needs removal for edit mode only.
-- The editor still has a "Scroll Speed" slider and "Lines per Scroll" input field which are now redundant since scrolling is beat-1 driven.
-- Color highlighting uses textarea selectionStart/selectionEnd indices stored as ColorHighlight[] and rendered in PlayTab via applyTextColorChanges(). The color application currently saves selections but the index offset can be wrong due to accumulation of overlapping highlights.
+- PlayTab renders lyrics by first running `parsePlaceholders()` on the full raw lyrics string (expanding `[N]` to N newlines), then passing the expanded string to `applyTextColorChanges()` with colorRange offsets stored against the original raw text. This causes a character-position drift: every `[N]` placeholder expands to N characters instead of the original 3+ chars, shifting all subsequent color ranges by a varying offset — producing colors landing on wrong words.
+- SongEditorTab has a plain `<textarea>` for editing. Color highlights are stored in state as `colorHighlights[]` but are not rendered visually in the editor — the user cannot see colors live while editing, only after Preview/Save.
+- JSON structure (songs, colorRanges, setLists) is stable in Version 43. No field renames or schema changes are needed.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Nothing new to add.
+- Live color overlay in SongEditorTab: a read-only `<div>` positioned behind the textarea that renders the current lyrics text with colored `<span>` segments based on `colorHighlights` state. The textarea uses `color: transparent` + `caretColor` so the user types normally while seeing live colors from the overlay beneath.
 
 ### Modify
-1. **Beat-1 scroll timing (PlayTab.tsx):** Move the scroll trigger to fire IMMEDIATELY at the START of beat 1's tick, before the beat counter advances. Currently `setScrollPosition` runs inside the interval after beat state is set. Reorder so scroll happens first when `beat === 1`, then advance the counter.
-2. **Sticky toolbar (SongEditorTab.tsx):** Extract the formatting toolbar row (Bold, Size, Color, Align buttons) out of the ScrollArea. Place it as a sticky bar above the ScrollArea so it stays fixed while the lyrics textarea scrolls. Use `position: sticky` or restructure layout so toolbar is outside the scrollable region.
-3. **Remove "Edit Song" subtitle description (SongEditorTab.tsx):** Remove the paragraph "Make changes to the song details below. Placeholders like [2] or [5] will create blank lines in Play Mode." from the edit mode branch. Keep the create mode description if present or remove both for cleanliness.
-4. **Remove Scroll Speed slider and Lines per Scroll input (SongEditorTab.tsx):** Delete the entire "Scroll Speed" slider block and the "Lines per Scroll" input block from the editor form. Remove associated state variables (`scrollSpeed`, `linesPerScroll`) and handlers (`handleLinesPerScrollChange`). Remove them from `performSave` data payload and `handlePreviewClick` song object (set linesPerScroll to BigInt(1) as default).
-5. **Color highlight index fix (SongEditorTab.tsx):** When applying a new color highlight via `handleApplyTextColorInstantly`, before adding the new highlight, remove any existing highlights that overlap with the new selection range [start, end]. This prevents index drift from stacked overlapping ranges causing offset rendering in PlayTab.
+- **PlayTab `renderedLyrics` logic**: Change the order of operations so `applyTextColorChanges()` is called on the **raw lyrics string** first, producing an array of React elements (each element being a plain text segment or a colored segment). Then `parsePlaceholders()` is applied **within each segment's text content** independently. This guarantees colorRange offsets match the raw text exactly, and placeholder expansion happens per-segment without shifting any ranges.
+- **SongEditorTab**: Wrap the textarea in a `relative` container; add the color overlay `<div>` as a sibling absolutely positioned behind it. Sync scroll position between overlay and textarea via `onScroll`.
 
 ### Remove
-- `scrollSpeed` state, setter, and Scroll Speed slider UI block from SongEditorTab.
-- `linesPerScroll` state, setter, input UI block, and `handleLinesPerScrollChange` from SongEditorTab.
-- The subtitle description paragraph under "Edit Song" heading.
+- Nothing removed from data structures, JSON format, or backend calls.
 
 ## Implementation Plan
-1. In `PlayTab.tsx`: Reorder the interval callback so scroll fires at the top when `beat === 1`, then flash, then advance beat counter.
-2. In `SongEditorTab.tsx`: 
-   - Move the toolbar div (Bold/Size/Color/Align row) outside the `<ScrollArea>` tag, placing it directly above it as a sticky/fixed element within the editor section.
-   - Remove the edit-mode subtitle paragraph.
-   - Remove the Scroll Speed slider block (Label + Slider + description paragraph).
-   - Remove the Lines per Scroll input block (Label + Input + description paragraph).
-   - Remove `scrollSpeed` and `linesPerScroll` state declarations and related handlers.
-   - Update `performSave` to remove `scrollSpeed` from data, keep `linesPerScroll: 1` hardcoded.
-   - Update `handlePreviewClick` to set `linesPerScroll: BigInt(1)`.
-   - In `handleApplyTextColorInstantly`: filter out existing highlights that overlap [start, end] before appending the new one.
+1. In `PlayTab.tsx`: Refactor `renderedLyrics` useMemo — call `applyTextColorChanges(song.lyrics, song.colorRanges)` on raw lyrics to get segments, then map each segment through `parsePlaceholders()` on its text content before rendering. This two-step approach eliminates offset drift entirely.
+2. In `SongEditorTab.tsx`: Add a `overlayRef` div sibling to the textarea. The overlay div mirrors the textarea's exact styles (font, size, padding, background) but uses `pointer-events: none` and `position: absolute`. Render colored spans from `colorHighlights` into the overlay. Add `onScroll` handler on the textarea to keep overlay scroll in sync. Set textarea `color: transparent` and `caretColor: textColor`.
+3. Preserve all existing `colorHighlights` state logic and `handleApplyTextColorInstantly` unchanged — no changes to save/load/import/export code.

@@ -93,6 +93,26 @@ function parsePlaceholders(text: string): string {
   });
 }
 
+/**
+ * Returns true when the lyrics string contains HTML markup (spans, br, etc.)
+ * — i.e. was saved by the new ContentEditable editor.
+ */
+function isHtmlLyrics(lyrics: string): boolean {
+  return /<[^>]+>/.test(lyrics);
+}
+
+/**
+ * Expand [N] placeholder tokens inside an HTML string by replacing them
+ * with N <br> tags (they won't be visible as text in the rendered output).
+ */
+function expandPlaceholdersInHtml(html: string): string {
+  return html.replace(/\[(\d+)\]/g, (_, num) => {
+    const count = Number.parseInt(num, 10);
+    if (Number.isNaN(count) || count < 1) return "";
+    return "<br>".repeat(count);
+  });
+}
+
 export default function PlayTab({
   songId,
   setListId,
@@ -153,12 +173,19 @@ export default function PlayTab({
 
     const rawLyrics = song.lyrics || "No lyrics available";
 
-    // Step 1: Split raw lyrics into segments using colorRanges (before placeholder expansion).
-    // colorRange offsets are stored against the raw text, so we must apply them here first.
-    const segments = splitTextIntoSegments(rawLyrics, song.colorRanges || []);
+    if (isHtmlLyrics(rawLyrics)) {
+      // HTML path: color is already embedded as <span style="color:…"> elements
+      const processed = expandPlaceholdersInHtml(rawLyrics);
+      return (
+        <span
+          dangerouslySetInnerHTML={{ __html: processed }}
+          style={{ whiteSpace: "pre-wrap" }}
+        />
+      );
+    }
 
-    // Step 2: Render each segment — placeholder expansion happens per-segment so
-    // no character-position drift can occur across segment boundaries.
+    // Legacy plain text path — split by colorRanges then render segments
+    const segments = splitTextIntoSegments(rawLyrics, song.colorRanges || []);
     return renderSegments(segments);
   }, [song]);
 

@@ -71,9 +71,114 @@ const DEFAULT_VALUES = {
   textColor: "#ffff00", // Default yellow
   textSize: 24,
   isBold: true, // Default bold on
-  textAlign: "center" as "left" | "center" | "right", // Default center-aligned
-  colorHighlights: [] as ColorHighlight[],
+  textAlign: "center" as "left" | "center" | "right",
 };
+
+// ─── Helper Functions ────────────────────────────────────────────────────────
+
+/**
+ * Strip all HTML tags to get plain text.
+ */
+function htmlToPlainText(html: string): string {
+  // Replace block-level closing tags with newlines before stripping
+  const withNewlines = html
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n");
+  // Strip remaining tags
+  return withNewlines.replace(/<[^>]*>/g, "");
+}
+
+/**
+ * Convert legacy plain text + colorRanges into HTML with <span style="color:…"> wrapping.
+ */
+function convertLegacyToHtml(
+  plainText: string,
+  colorRanges: ColorHighlight[],
+): string {
+  if (colorRanges.length === 0) {
+    // Escape and preserve newlines
+    return plainText
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\n/g, "<br>");
+  }
+
+  const sorted = [...colorRanges]
+    .map((h) => ({
+      start: Number(h.start),
+      end: Number(h.end),
+      color: h.color,
+    }))
+    .filter((h) => h.start < h.end && h.start >= 0 && h.end <= plainText.length)
+    .sort((a, b) => a.start - b.start);
+
+  let html = "";
+  let lastIndex = 0;
+
+  const encodeSegment = (text: string) =>
+    text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\n/g, "<br>");
+
+  for (const h of sorted) {
+    if (h.start > lastIndex) {
+      html += encodeSegment(plainText.substring(lastIndex, h.start));
+    }
+    html += `<span style="color:${h.color}">${encodeSegment(plainText.substring(h.start, h.end))}</span>`;
+    lastIndex = h.end;
+  }
+
+  if (lastIndex < plainText.length) {
+    html += encodeSegment(plainText.substring(lastIndex));
+  }
+
+  return html;
+}
+
+/**
+ * Normalise browser-generated markup:
+ * - Convert <font color="…"> → <span style="color:VALUE">
+ * - Strip <b>, <i>, <u>, <div>, <p> (but preserve their line-break semantics)
+ * - Keep <span style="color:…"> and <br>
+ */
+function normalizeEditorHtml(html: string): string {
+  let result = html;
+
+  // Convert </div> and </p> to <br> for line breaks
+  result = result.replace(/<\/div>/gi, "<br>");
+  result = result.replace(/<\/p>/gi, "<br>");
+
+  // Convert <font color="…"> / <font color='…'> → <span style="color:VALUE">
+  result = result.replace(
+    /<font[^>]*\s+color=["']?([^"'\s>]+)["']?[^>]*>/gi,
+    (_match, color) => `<span style="color:${color}">`,
+  );
+  // Close <font> tags → </span>
+  result = result.replace(/<\/font>/gi, "</span>");
+
+  // Strip unwanted tags but keep content
+  const stripTags = ["b", "i", "u", "strong", "em", "strike", "s", "div", "p"];
+  for (const tag of stripTags) {
+    result = result.replace(new RegExp(`</?${tag}[^>]*>`, "gi"), "");
+  }
+
+  // Remove any remaining tags that are NOT <span…>, </span>, or <br>
+  result = result.replace(/<(?!\/?(span|br)(?:\s|>))[^>]+>/gi, "");
+
+  // Collapse multiple consecutive <br> at end (artifact of closing tag conversion)
+  result = result.replace(/(<br\s*\/?>\s*){3,}/gi, "<br><br>");
+
+  // Remove leading/trailing <br>
+  result = result.replace(/^(<br\s*\/?>)+/i, "").replace(/(<br\s*\/?>)+$/i, "");
+
+  return result;
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export default function SongEditorTab({
   editorState,
@@ -88,6 +193,7 @@ export default function SongEditorTab({
 
   const [title, setTitle] = useState(DEFAULT_VALUES.title);
   const [artist, setArtist] = useState(DEFAULT_VALUES.artist);
+  // lyrics holds the current innerHTML of the contenteditable div
   const [lyrics, setLyrics] = useState(DEFAULT_VALUES.lyrics);
   const [tempo, setTempo] = useState(DEFAULT_VALUES.tempo);
   const [backgroundColor, setBackgroundColor] = useState(
@@ -96,9 +202,6 @@ export default function SongEditorTab({
   const [textColor, setTextColor] = useState(DEFAULT_VALUES.textColor);
   const [textSize, setTextSize] = useState(DEFAULT_VALUES.textSize);
   const [isBold, setIsBold] = useState(DEFAULT_VALUES.isBold);
-  const [colorHighlights, setColorHighlights] = useState<ColorHighlight[]>(
-    DEFAULT_VALUES.colorHighlights,
-  );
   const [selectedColor, setSelectedColor] = useState("#00ff00");
   const [textAlign, setTextAlign] = useState<"left" | "center" | "right">(
     DEFAULT_VALUES.textAlign,
@@ -108,34 +211,65 @@ export default function SongEditorTab({
     id: string;
     title: string;
   } | null>(null);
+  // Track which song was last loaded so we only sync innerHTML on actual song changes.
+  // Using a ref avoids this value appearing in the effect dependency list.
+  const lastLoadedSongIdRef = useRef<string | undefined>(undefined);
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
-  const selectionRef = useRef<{ start: number; end: number } | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
 
+  // ── Load existing song ────────────────────────────────────────────────────
   useEffect(() => {
     if (existingSong && editorState.mode === "edit") {
+      // Avoid re-loading the same song twice (e.g. re-render without song change)
+      const songKey = existingSong.id + existingSong.updatedAt.toString();
+      if (lastLoadedSongIdRef.current === songKey) return;
+      lastLoadedSongIdRef.current = songKey;
+
       setTitle(existingSong.title);
       setArtist(existingSong.artist);
-      setLyrics(existingSong.lyrics);
       setTempo(Number(existingSong.tempo));
       setBackgroundColor(existingSong.backgroundColor);
       setTextColor(existingSong.textColor);
       setTextSize(Number(existingSong.textSize));
       setIsBold(existingSong.isBold);
 
-      // Load color ranges from backend
-      const loadedHighlights: ColorHighlight[] = existingSong.colorRanges.map(
+      const rawLyrics = existingSong.lyrics;
+      const loadedColorRanges: ColorHighlight[] = existingSong.colorRanges.map(
         (range) => ({
           start: range.start,
           end: range.end,
           color: range.color,
         }),
       );
-      setColorHighlights(loadedHighlights);
+
+      let htmlToLoad: string;
+
+      if (/<span\s/i.test(rawLyrics) || /<br/i.test(rawLyrics)) {
+        // Already HTML — use as-is
+        htmlToLoad = rawLyrics;
+      } else if (loadedColorRanges.length > 0) {
+        // Legacy plain text + colorRanges — convert
+        htmlToLoad = convertLegacyToHtml(rawLyrics, loadedColorRanges);
+      } else {
+        // Pure plain text — encode for HTML
+        htmlToLoad = rawLyrics
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\n/g, "<br>");
+      }
+
+      setLyrics(htmlToLoad);
+      // Set editor innerHTML after React has flushed
+      requestAnimationFrame(() => {
+        if (editorRef.current) {
+          editorRef.current.innerHTML = htmlToLoad;
+        }
+      });
     } else if (editorState.mode === "create") {
       clearForm();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existingSong, editorState]);
 
   const clearForm = () => {
@@ -147,104 +281,16 @@ export default function SongEditorTab({
     setTextColor(DEFAULT_VALUES.textColor);
     setTextSize(DEFAULT_VALUES.textSize);
     setIsBold(DEFAULT_VALUES.isBold);
-    setColorHighlights(DEFAULT_VALUES.colorHighlights);
     setTextAlign(DEFAULT_VALUES.textAlign);
+    lastLoadedSongIdRef.current = undefined;
+    if (editorRef.current) {
+      editorRef.current.innerHTML = "";
+    }
   };
 
-  // Rebuild color ranges to maintain correct mappings
-  const rebuildColorRanges = useCallback(
-    (text: string, highlights: ColorHighlight[]): ColorHighlight[] => {
-      if (highlights.length === 0) return [];
-
-      // Sort highlights by start position
-      const sorted = [...highlights].sort(
-        (a, b) => Number(a.start) - Number(b.start),
-      );
-
-      // Filter out invalid ranges (where start >= end or out of bounds)
-      const valid = sorted.filter((h) => {
-        const start = Number(h.start);
-        const end = Number(h.end);
-        return start < end && start >= 0 && end <= text.length;
-      });
-
-      // Remove overlapping ranges, keeping the first one
-      const noOverlaps: ColorHighlight[] = [];
-      let lastEnd = 0;
-
-      for (const highlight of valid) {
-        const start = Number(highlight.start);
-        const end = Number(highlight.end);
-
-        if (start >= lastEnd) {
-          noOverlaps.push(highlight);
-          lastEnd = end;
-        }
-      }
-
-      return noOverlaps;
-    },
-    [],
-  );
-
-  // Build colored segments for the live overlay from current lyrics + colorHighlights.
-  // Uses same logic as PlayTab but operates on editor state so colors show immediately.
-  const overlayContent = useCallback(() => {
-    if (colorHighlights.length === 0) {
-      return <span style={{ color: textColor }}>{lyrics}</span>;
-    }
-
-    const sorted = [...colorHighlights]
-      .map((h) => ({
-        start: Number(h.start),
-        end: Number(h.end),
-        color: h.color,
-      }))
-      .filter((h) => h.start < h.end && h.start >= 0 && h.end <= lyrics.length)
-      .sort((a, b) => a.start - b.start);
-
-    const elements: React.ReactNode[] = [];
-    let lastIndex = 0;
-
-    for (const h of sorted) {
-      if (h.start > lastIndex) {
-        elements.push(
-          <span key={`t-${lastIndex}`} style={{ color: textColor }}>
-            {lyrics.substring(lastIndex, h.start)}
-          </span>,
-        );
-      }
-      elements.push(
-        <span key={`c-${h.start}`} style={{ color: h.color }}>
-          {lyrics.substring(h.start, h.end)}
-        </span>,
-      );
-      lastIndex = h.end;
-    }
-
-    if (lastIndex < lyrics.length) {
-      elements.push(
-        <span key="t-end" style={{ color: textColor }}>
-          {lyrics.substring(lastIndex)}
-        </span>,
-      );
-    }
-
-    return <>{elements}</>;
-  }, [colorHighlights, lyrics, textColor]);
-
-  // Keep overlay scroll position in sync with textarea
-  const handleTextareaScroll = useCallback(() => {
-    if (textareaRef.current && overlayRef.current) {
-      overlayRef.current.scrollTop = textareaRef.current.scrollTop;
-      overlayRef.current.scrollLeft = textareaRef.current.scrollLeft;
-    }
-  }, []);
-
+  // ── Save ──────────────────────────────────────────────────────────────────
   const handleSaveClick = async () => {
-    if (!title.trim()) {
-      return;
-    }
+    if (!title.trim()) return;
 
     const conflict = checkTitleConflict(title.trim(), editorState.songId);
 
@@ -257,14 +303,16 @@ export default function SongEditorTab({
   };
 
   const performSave = async (replaceExisting: boolean) => {
-    // Rebuild color ranges before saving to ensure correct mappings
-    const rebuiltColorHighlights = rebuildColorRanges(lyrics, colorHighlights);
+    const rawHtml = editorRef.current?.innerHTML ?? lyrics;
+    const normalizedHtml = normalizeEditorHtml(rawHtml);
+    const plainTextForCheck = htmlToPlainText(normalizedHtml);
 
     const data = {
       id: editorState.songId,
       title: title.trim(),
       artist: artist.trim(),
-      lyrics: lyrics.trim(),
+      // Store HTML directly — color is embedded in spans
+      lyrics: normalizedHtml,
       scrollSpeed: 0,
       linesPerScroll: 1,
       tempo,
@@ -272,14 +320,18 @@ export default function SongEditorTab({
       textColor,
       textSize,
       isBold,
-      colorHighlights: rebuiltColorHighlights,
+      // Empty colorHighlights — color lives in the HTML now
+      colorHighlights: [] as ColorHighlight[],
       replaceExisting,
     };
+
+    // Guard against saving an empty editor
+    if (!plainTextForCheck.trim() && !title.trim()) return;
 
     try {
       const savedId = await saveMutation.mutateAsync(data);
 
-      const savedSong = {
+      const savedSong: Song = {
         id: savedId,
         title: data.title,
         artist: data.artist,
@@ -291,17 +343,12 @@ export default function SongEditorTab({
         textSize: BigInt(data.textSize),
         isBold: data.isBold,
         linesPerScroll: BigInt(1),
-        colorRanges: data.colorHighlights.map((h) => ({
-          start: h.start,
-          end: h.end,
-          color: h.color,
-        })),
+        colorRanges: [],
         createdAt: BigInt(Date.now() * 1000000),
         updatedAt: BigInt(Date.now() * 1000000),
       };
 
       await exportSongMutation.mutateAsync(savedSong);
-
       onSave();
     } catch (error) {
       console.error("Failed to save song:", error);
@@ -323,82 +370,44 @@ export default function SongEditorTab({
     setConflictingSong(null);
   };
 
+  // ── Color Application (ContentEditable approach) ──────────────────────────
   const handleApplyTextColorInstantly = useCallback((color: string) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-
-    if (start === end) return; // No selection
-
-    // Save selection range
-    selectionRef.current = { start, end };
-
-    // Create new color highlight
-    const newColorChange: ColorHighlight = {
-      start: BigInt(start),
-      end: BigInt(end),
-      color: color,
-    };
-
-    // Add to highlights, replacing any overlapping existing highlights
-    setColorHighlights((prev) => {
-      // Remove highlights that overlap with the new selection range
-      const filtered = prev.filter((h) => {
-        const hStart = Number(h.start);
-        const hEnd = Number(h.end);
-        // Keep highlight only if it does NOT overlap with [start, end]
-        return hEnd <= start || hStart >= end;
-      });
-      return [...filtered, newColorChange];
-    });
-
-    // Restore selection after React updates
-    requestAnimationFrame(() => {
-      if (textarea && selectionRef.current) {
-        textarea.focus();
-        textarea.setSelectionRange(
-          selectionRef.current.start,
-          selectionRef.current.end,
-        );
-      }
-    });
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+    // Apply color using execCommand (works in all major browsers)
+    document.execCommand("styleWithCSS", false, "true");
+    document.execCommand("foreColor", false, color);
+    // Sync state from DOM
+    setLyrics(editor.innerHTML);
   }, []);
 
   const handleClearTextColors = () => {
-    setColorHighlights([]);
+    const editor = editorRef.current;
+    if (!editor) return;
+    const plain = htmlToPlainText(editor.innerHTML);
+    // Rebuild as plain text preserving line breaks
+    const plainHtml = plain
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\n/g, "<br>");
+    editor.innerHTML = plainHtml;
+    setLyrics(plainHtml);
   };
 
-  const handleLyricsChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const textarea = e.target;
-      const newValue = textarea.value;
-      const savedStart = textarea.selectionStart;
-      const savedEnd = textarea.selectionEnd;
-
-      setLyrics(newValue);
-
-      // Restore cursor position after React updates
-      requestAnimationFrame(() => {
-        if (textarea) {
-          textarea.setSelectionRange(savedStart, savedEnd);
-        }
-      });
-    },
-    [],
-  );
-
+  // ── Preview ───────────────────────────────────────────────────────────────
   const handlePreviewClick = () => {
-    // Rebuild color ranges before preview
-    const rebuiltColorHighlights = rebuildColorRanges(lyrics, colorHighlights);
+    const rawHtml = editorRef.current?.innerHTML ?? lyrics;
+    const normalizedHtml = normalizeEditorHtml(rawHtml);
 
-    // Create a preview song object with current editor state
     const previewSong: Song = {
       id: editorState.songId || "preview",
       title: title.trim() || "Untitled Song",
       artist: artist.trim(),
-      lyrics: lyrics.trim(),
+      lyrics: normalizedHtml,
       scrollSpeed: BigInt(0),
       tempo: BigInt(tempo),
       backgroundColor,
@@ -406,17 +415,16 @@ export default function SongEditorTab({
       textSize: BigInt(textSize),
       isBold,
       linesPerScroll: BigInt(1),
-      colorRanges: rebuiltColorHighlights.map((h) => ({
-        start: h.start,
-        end: h.end,
-        color: h.color,
-      })),
+      colorRanges: [],
       createdAt: BigInt(Date.now() * 1000000),
       updatedAt: BigInt(Date.now() * 1000000),
     };
 
     onPreview(previewSong);
   };
+
+  // Whether the editor has any content (used for disabled states)
+  const hasContent = !!htmlToPlainText(lyrics).trim();
 
   const isSaving = saveMutation.isPending || exportSongMutation.isPending;
 
@@ -524,18 +532,11 @@ export default function SongEditorTab({
                   <Button
                     variant="outline"
                     onClick={handleClearTextColors}
-                    disabled={colorHighlights.length === 0}
                     className="flex-1"
                   >
-                    Clear All
+                    Clear All Colors
                   </Button>
                 </div>
-                {colorHighlights.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {colorHighlights.length} color change
-                    {colorHighlights.length !== 1 ? "s" : ""} applied
-                  </p>
-                )}
               </div>
             </PopoverContent>
           </Popover>
@@ -582,6 +583,7 @@ export default function SongEditorTab({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Enter song title"
+                data-ocid="editor.input"
               />
             </div>
 
@@ -592,78 +594,61 @@ export default function SongEditorTab({
                 value={artist}
                 onChange={(e) => setArtist(e.target.value)}
                 placeholder="Enter artist name"
+                data-ocid="editor.input"
               />
             </div>
           </div>
 
-          {/* Lyrics textarea — toolbar is sticky above the ScrollArea */}
+          {/* ContentEditable lyrics editor */}
           <div className="space-y-2">
-            {/* Overlay + textarea combo for live color preview */}
-            <div className="relative" style={{ minHeight: 500 }}>
-              {/* The actual editable textarea — always rendered; text is transparent when overlay is active */}
-              <textarea
-                ref={textareaRef}
-                value={lyrics}
-                onChange={handleLyricsChange}
-                onScroll={handleTextareaScroll}
-                className="relative w-full min-h-[500px] p-4 rounded-md border font-mono focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-                style={{
-                  backgroundColor: backgroundColor,
-                  color: colorHighlights.length > 0 ? "transparent" : textColor,
-                  caretColor: textColor,
-                  fontSize: `${textSize}px`,
-                  fontWeight: isBold ? "bold" : "normal",
-                  textAlign: textAlign,
-                  whiteSpace: "pre-wrap",
-                  wordWrap: "break-word",
-                  zIndex: 1,
-                  position: "relative",
-                }}
-                placeholder="Type or paste lyrics here..."
-              />
-
-              {/* Color overlay — sits on top of textarea, transparent background so only colored text spans show */}
-              {colorHighlights.length > 0 && (
-                <div
-                  ref={overlayRef}
-                  aria-hidden="true"
-                  className="absolute inset-0 p-4 rounded-md border border-transparent font-mono overflow-hidden pointer-events-none"
-                  style={{
-                    backgroundColor: "transparent",
-                    fontSize: `${textSize}px`,
-                    fontWeight: isBold ? "bold" : "normal",
-                    textAlign: textAlign,
-                    whiteSpace: "pre-wrap",
-                    wordWrap: "break-word",
-                    lineHeight: "inherit",
-                    zIndex: 2,
-                    boxSizing: "border-box",
-                  }}
-                >
-                  {overlayContent()}
-                  {"\n"}
-                </div>
-              )}
-            </div>
-
+            <div
+              ref={editorRef}
+              contentEditable
+              suppressContentEditableWarning
+              data-ocid="editor.editor"
+              onInput={() => setLyrics(editorRef.current?.innerHTML ?? "")}
+              className="relative w-full min-h-[500px] p-4 rounded-md border font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+              style={{
+                backgroundColor: backgroundColor,
+                color: textColor,
+                caretColor: textColor,
+                fontSize: `${textSize}px`,
+                fontWeight: isBold ? "bold" : "normal",
+                textAlign: textAlign,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                minHeight: 500,
+                outline: "none",
+                lineHeight: "1.5",
+              }}
+            />
             <p className="text-xs text-muted-foreground">
-              Type or paste lyrics here. Use [N] placeholders (e.g., [2], [5],
-              [10]) to insert blank lines in Play Mode. These appear as editable
-              text here but become invisible spacing in Play Mode. Color
-              formatting will be visible in Play Mode.
+              Type or paste lyrics here. Select text then pick a color from the
+              toolbar to apply. Use [N] placeholders (e.g., [2], [5]) to insert
+              blank lines in Play Mode. Color formatting is stored directly in
+              the text and will show in Play Mode.
             </p>
           </div>
 
+          {/* Tempo — plain number input, no slider */}
           <div className="space-y-2">
-            <Label>Tempo (BPM): {tempo}</Label>
-            <Slider
-              value={[tempo]}
-              onValueChange={(v) => setTempo(v[0])}
+            <Label htmlFor="tempo">Tempo (BPM)</Label>
+            <Input
+              id="tempo"
+              type="number"
               min={40}
               max={240}
-              step={1}
+              value={tempo}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                const v = Number(e.target.value);
+                if (!Number.isNaN(v) && v >= 40 && v <= 240) setTempo(v);
+              }}
+              className="w-32"
+              data-ocid="editor.input"
             />
-            <p className="text-xs text-muted-foreground">Beats per minute</p>
+            <p className="text-xs text-muted-foreground">
+              Beats per minute (40–240)
+            </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -708,6 +693,7 @@ export default function SongEditorTab({
 
           <div className="flex gap-3 pt-4">
             <Button
+              data-ocid="editor.save_button"
               onClick={handleSaveClick}
               disabled={!title.trim() || isSaving}
               className="bg-primary hover:bg-primary/90"
@@ -717,20 +703,26 @@ export default function SongEditorTab({
             </Button>
 
             <Button
+              data-ocid="editor.primary_button"
               onClick={handlePreviewClick}
-              disabled={!lyrics.trim()}
+              disabled={!hasContent}
               className="bg-green-600 hover:bg-green-700"
             >
               <Play className="h-4 w-4 mr-2" />
               Preview
             </Button>
 
-            <Button variant="outline" onClick={onCancel}>
+            <Button
+              data-ocid="editor.cancel_button"
+              variant="outline"
+              onClick={onCancel}
+            >
               <X className="h-4 w-4 mr-2" />
               Cancel
             </Button>
 
             <Button
+              data-ocid="editor.delete_button"
               variant="destructive"
               className="ml-auto"
               onClick={clearForm}
@@ -746,7 +738,7 @@ export default function SongEditorTab({
         open={showTitleConflictDialog}
         onOpenChange={setShowTitleConflictDialog}
       >
-        <AlertDialogContent>
+        <AlertDialogContent data-ocid="editor.dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>Title Already Exists</AlertDialogTitle>
             <AlertDialogDescription>
@@ -756,13 +748,21 @@ export default function SongEditorTab({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleTitleConflictCancel}>
+            <AlertDialogCancel
+              data-ocid="editor.cancel_button"
+              onClick={handleTitleConflictCancel}
+            >
               Cancel
             </AlertDialogCancel>
-            <Button variant="outline" onClick={handleTitleConflictSaveAsNew}>
+            <Button
+              data-ocid="editor.secondary_button"
+              variant="outline"
+              onClick={handleTitleConflictSaveAsNew}
+            >
               Save as new
             </Button>
             <AlertDialogAction
+              data-ocid="editor.confirm_button"
               onClick={handleTitleConflictReplace}
               className="bg-primary hover:bg-primary/90"
             >

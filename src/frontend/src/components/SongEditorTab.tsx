@@ -600,38 +600,15 @@ export default function SongEditorTab({
           <div className="space-y-2">
             {/* Overlay + textarea combo for live color preview */}
             <div className="relative" style={{ minHeight: 500 }}>
-              {/* Color overlay — renders colored spans, sits behind the textarea */}
-              <div
-                ref={overlayRef}
-                aria-hidden="true"
-                className="absolute inset-0 p-4 rounded-md border border-transparent font-mono overflow-hidden pointer-events-none"
-                style={{
-                  backgroundColor: backgroundColor,
-                  fontSize: `${textSize}px`,
-                  fontWeight: isBold ? "bold" : "normal",
-                  textAlign: textAlign,
-                  whiteSpace: "pre-wrap",
-                  wordWrap: "break-word",
-                  lineHeight: "inherit",
-                  zIndex: 1,
-                  // Exact same box model as textarea so text positions align
-                  boxSizing: "border-box",
-                }}
-              >
-                {overlayContent()}
-                {/* trailing space to prevent overlay from being shorter than textarea */}
-                {"\n"}
-              </div>
-
-              {/* The actual editable textarea — transparent text so overlay shows through */}
+              {/* The actual editable textarea — always rendered; text is transparent when overlay is active */}
               <textarea
                 ref={textareaRef}
                 value={lyrics}
                 onChange={handleLyricsChange}
                 onScroll={handleTextareaScroll}
-                className="relative w-full min-h-[500px] p-4 rounded-md border font-mono focus:outline-none focus:ring-2 focus:ring-primary resize-none bg-transparent"
+                className="relative w-full min-h-[500px] p-4 rounded-md border font-mono focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                 style={{
-                  backgroundColor: "transparent",
+                  backgroundColor: backgroundColor,
                   color: colorHighlights.length > 0 ? "transparent" : textColor,
                   caretColor: textColor,
                   fontSize: `${textSize}px`,
@@ -639,11 +616,34 @@ export default function SongEditorTab({
                   textAlign: textAlign,
                   whiteSpace: "pre-wrap",
                   wordWrap: "break-word",
-                  zIndex: 2,
+                  zIndex: 1,
                   position: "relative",
                 }}
                 placeholder="Type or paste lyrics here..."
               />
+
+              {/* Color overlay — sits on top of textarea, transparent background so only colored text spans show */}
+              {colorHighlights.length > 0 && (
+                <div
+                  ref={overlayRef}
+                  aria-hidden="true"
+                  className="absolute inset-0 p-4 rounded-md border border-transparent font-mono overflow-hidden pointer-events-none"
+                  style={{
+                    backgroundColor: "transparent",
+                    fontSize: `${textSize}px`,
+                    fontWeight: isBold ? "bold" : "normal",
+                    textAlign: textAlign,
+                    whiteSpace: "pre-wrap",
+                    wordWrap: "break-word",
+                    lineHeight: "inherit",
+                    zIndex: 2,
+                    boxSizing: "border-box",
+                  }}
+                >
+                  {overlayContent()}
+                  {"\n"}
+                </div>
+              )}
             </div>
 
             <p className="text-xs text-muted-foreground">

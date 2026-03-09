@@ -8,7 +8,7 @@ import {
 import { Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ColorRange, Song } from "../backend";
+import type { Song } from "../backend";
 import {
   useGetSetList,
   useGetSong,
@@ -19,78 +19,6 @@ interface PlayTabProps {
   songId?: string;
   setListId?: string;
   previewSong?: Song;
-}
-
-interface TextSegment {
-  text: string;
-  color?: string; // undefined = default color
-}
-
-function splitTextIntoSegments(
-  text: string,
-  colorRanges: ColorRange[],
-): TextSegment[] {
-  if (colorRanges.length === 0) {
-    return [{ text }];
-  }
-
-  const sorted = [...colorRanges].sort(
-    (a, b) => Number(a.start) - Number(b.start),
-  );
-
-  const segments: TextSegment[] = [];
-  let lastIndex = 0;
-
-  for (const colorRange of sorted) {
-    const start = Number(colorRange.start);
-    const end = Number(colorRange.end);
-
-    if (start > text.length) break;
-    if (start > lastIndex) {
-      segments.push({ text: text.substring(lastIndex, start) });
-    }
-
-    segments.push({
-      text: text.substring(start, Math.min(end, text.length)),
-      color: colorRange.color,
-    });
-
-    lastIndex = Math.min(end, text.length);
-  }
-
-  if (lastIndex < text.length) {
-    segments.push({ text: text.substring(lastIndex) });
-  }
-
-  return segments;
-}
-
-function renderSegments(segments: TextSegment[]): React.ReactElement[] {
-  let offset = 0;
-  return segments.map((seg) => {
-    const key = `seg-${offset}`;
-    offset += seg.text.length;
-    const expanded = parsePlaceholders(seg.text);
-    if (seg.color) {
-      return (
-        <span key={key} style={{ color: seg.color }}>
-          {expanded}
-        </span>
-      );
-    }
-    return <span key={key}>{expanded}</span>;
-  });
-}
-
-function parsePlaceholders(text: string): string {
-  // Replace [N] placeholders with N blank lines
-  // Matches patterns like [2], [5], [10], etc.
-  return text.replace(/\[(\d+)\]/g, (match, num) => {
-    const count = Number.parseInt(num, 10);
-    if (Number.isNaN(count) || count < 1) return match;
-    // Create N newlines
-    return "\n".repeat(count);
-  });
 }
 
 /**
@@ -173,20 +101,18 @@ export default function PlayTab({
 
     const rawLyrics = song.lyrics || "No lyrics available";
 
-    if (isHtmlLyrics(rawLyrics)) {
-      // HTML path: color is already embedded as <span style="color:…"> elements
-      const processed = expandPlaceholdersInHtml(rawLyrics);
-      return (
-        <span
-          dangerouslySetInnerHTML={{ __html: processed }}
-          style={{ whiteSpace: "pre-wrap" }}
-        />
-      );
-    }
+    // All songs now store HTML with color embedded as <span style="color:…"> elements
+    const processed = isHtmlLyrics(rawLyrics)
+      ? expandPlaceholdersInHtml(rawLyrics)
+      : rawLyrics;
 
-    // Legacy plain text path — split by colorRanges then render segments
-    const segments = splitTextIntoSegments(rawLyrics, song.colorRanges || []);
-    return renderSegments(segments);
+    return (
+      <span
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: lyrics HTML is user-authored content stored in the backend
+        dangerouslySetInnerHTML={{ __html: processed }}
+        style={{ whiteSpace: "pre-wrap" }}
+      />
+    );
   }, [song]);
 
   // Parse numerator from time signature string e.g. "4/4" → 4, "6/8" → 6
@@ -340,16 +266,18 @@ export default function PlayTab({
       >
         <div className="min-h-full flex items-center justify-center p-8">
           {song ? (
-            <pre
-              className="whitespace-pre-wrap text-center font-sans leading-relaxed max-w-4xl"
+            <div
+              className="text-center font-sans leading-relaxed max-w-4xl"
               style={{
                 fontSize: `${song.textSize}px`,
                 fontWeight: song.isBold ? "bold" : "normal",
                 textAlign: "center",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
               }}
             >
               {renderedLyrics}
-            </pre>
+            </div>
           ) : (
             <p className="text-muted-foreground text-center">
               Select a song to begin

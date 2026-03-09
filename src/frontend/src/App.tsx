@@ -1,6 +1,5 @@
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "next-themes";
-import { useEffect } from "react";
 import { useState } from "react";
 import type { Song } from "./backend";
 import Footer from "./components/Footer";
@@ -31,19 +30,9 @@ function App() {
   });
   const [playState, setPlayState] = useState<PlayState | null>(null);
 
-  // Automatically load all songs and set lists on startup
-  const { data: songs = [], isLoading: songsLoading } = useGetAllSongs();
-  const { data: setLists = [], isLoading: setListsLoading } =
-    useGetAllSetLists();
-
-  // Log loaded data for verification
-  useEffect(() => {
-    if (!songsLoading && !setListsLoading) {
-      console.log(
-        `Loaded ${songs.length} songs and ${setLists.length} set lists from backend`,
-      );
-    }
-  }, [songs.length, setLists.length, songsLoading, setListsLoading]);
+  // Preload songs and set lists on startup so tabs render immediately
+  useGetAllSongs();
+  useGetAllSetLists();
 
   const handleEditSong = (songId: string) => {
     setEditorState({ songId, mode: "edit" });

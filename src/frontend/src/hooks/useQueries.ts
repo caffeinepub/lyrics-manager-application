@@ -448,36 +448,6 @@ export function useReorderSetListSongs() {
   });
 }
 
-export function useRenameSetList() {
-  const { actor } = useActor();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (data: { setListId: string; newName: string }) => {
-      if (!actor) throw new Error("Actor not initialized");
-
-      // Get current set list
-      const exportData = await actor.exportData();
-      const setList = exportData.setLists.find(
-        (sl) => sl.id === data.setListId,
-      );
-      if (!setList) throw new Error("Set list not found");
-
-      return actor.updateSetList(data.setListId, data.newName, setList.songIds);
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["setlists"] });
-      queryClient.invalidateQueries({
-        queryKey: ["setlist", variables.setListId],
-      });
-      toast.success("Set list renamed successfully");
-    },
-    onError: () => {
-      toast.error("Failed to rename set list");
-    },
-  });
-}
-
 // Settings type
 export interface AppSettings {
   defaultScrollSpeed: number;

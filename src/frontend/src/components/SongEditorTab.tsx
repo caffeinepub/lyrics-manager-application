@@ -144,36 +144,56 @@ function convertLegacyToHtml(
  * - Convert <font color="…"> → <span style="color:VALUE">
  * - Strip <b>, <i>, <u>, <div>, <p> (but preserve their line-break semantics)
  * - Keep <span style="color:…"> and <br>
+ *
+ * IMPORTANT: Order of operations matters here to preserve line breaks.
+ * Chrome wraps each new paragraph in <div>…</div>. We must convert closing
+ * block tags to <br> BEFORE stripping the opening tags, so every line gets
+ * a break. The whitelist pass at the end is case-insensitive to catch <BR>.
  */
 function normalizeEditorHtml(html: string): string {
   let result = html;
 
-  // Convert </div> and </p> to <br> for line breaks
-  result = result.replace(/<\/div>/gi, "<br>");
-  result = result.replace(/<\/p>/gi, "<br>");
-
-  // Convert <font color="…"> / <font color='…'> → <span style="color:VALUE">
+  // Step 1: Convert <font color="…"> / <font color='…'> → <span style="color:VALUE">
   result = result.replace(
     /<font[^>]*\s+color=["']?([^"'\s>]+)["']?[^>]*>/gi,
     (_match, color) => `<span style="color:${color}">`,
   );
-  // Close <font> tags → </span>
   result = result.replace(/<\/font>/gi, "</span>");
 
-  // Strip unwanted tags but keep content
-  const stripTags = ["b", "i", "u", "strong", "em", "strike", "s", "div", "p"];
-  for (const tag of stripTags) {
-    result = result.replace(new RegExp(`</?${tag}[^>]*>`, "gi"), "");
+  // Step 2: Convert closing block tags to <br> FIRST (before stripping open tags)
+  // This ensures every Chrome-generated <div> line gets a line break.
+  result = result.replace(/<\/div>/gi, "<br>");
+  result = result.replace(/<\/p>/gi, "<br>");
+
+  // Step 3: Strip unwanted OPENING tags (their closing tags already converted above)
+  const stripOpenTags = [
+    "b",
+    "i",
+    "u",
+    "strong",
+    "em",
+    "strike",
+    "s",
+    "div",
+    "p",
+  ];
+  for (const tag of stripOpenTags) {
+    result = result.replace(new RegExp(`<${tag}(?:\\s[^>]*)?>`, "gi"), "");
   }
 
-  // Remove any remaining tags that are NOT <span…>, </span>, or <br>
-  result = result.replace(/<(?!\/?(span|br)(?:\s|>))[^>]+>/gi, "");
+  // Step 4: Remove any remaining tags that are NOT <span…>, </span>, or <br>
+  // Use case-insensitive flag and allow self-closing <br/>
+  result = result.replace(/<(?!\/?span(?:\s|>))(?!br(?:\s|\/?>))[^>]+>/gi, "");
 
-  // Collapse multiple consecutive <br> at end (artifact of closing tag conversion)
-  result = result.replace(/(<br\s*\/?>\s*){3,}/gi, "<br><br>");
+  // Step 5: Normalise <br> variants to a consistent form
+  result = result.replace(/<br\s*\/?>/gi, "<br>");
 
-  // Remove leading/trailing <br>
-  result = result.replace(/^(<br\s*\/?>)+/i, "").replace(/(<br\s*\/?>)+$/i, "");
+  // Step 6: Collapse 3+ consecutive <br> to at most 2 (trim accidental blanks from
+  // the closing-tag conversion, but allow intentional double line-breaks)
+  result = result.replace(/(<br>){3,}/g, "<br><br>");
+
+  // Step 7: Remove leading/trailing <br>
+  result = result.replace(/^(<br>)+/, "").replace(/(<br>)+$/, "");
 
   return result;
 }
@@ -244,9 +264,15 @@ export default function SongEditorTab({
 
       let htmlToLoad: string;
 
-      if (/<span\s/i.test(rawLyrics) || /<br/i.test(rawLyrics)) {
-        // Already HTML — use as-is
-        htmlToLoad = rawLyrics;
+      if (
+        /<span[\s>]/i.test(rawLyrics) ||
+        /<br[\s/>]/i.test(rawLyrics) ||
+        /<div[\s>]/i.test(rawLyrics) ||
+        /<p[\s>]/i.test(rawLyrics)
+      ) {
+        // Already HTML — normalize it to strip any browser-specific markup
+        // while preserving all line breaks and color spans
+        htmlToLoad = normalizeEditorHtml(rawLyrics);
       } else if (loadedColorRanges.length > 0) {
         // Legacy plain text + colorRanges — convert
         htmlToLoad = convertLegacyToHtml(rawLyrics, loadedColorRanges);

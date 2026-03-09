@@ -198,6 +198,26 @@ function normalizeEditorHtml(html: string): string {
   return result;
 }
 
+/**
+ * Ensure the first child of the contenteditable div is never a naked text node.
+ * Chrome places the very first typed/pasted line as a raw Text node, which it
+ * then handles differently from all subsequent lines (wrapped in <div>s) when
+ * the user presses Enter. Wrapping that first node in a <div> before editing
+ * begins makes all lines consistent and prevents the "first Enter loses the
+ * break" bug.
+ */
+function normalizeFirstLineNode(editor: HTMLDivElement): void {
+  const firstChild = editor.firstChild;
+  if (!firstChild) return;
+
+  // If the very first child is a bare text node (nodeType 3), wrap it
+  if (firstChild.nodeType === Node.TEXT_NODE) {
+    const wrapper = document.createElement("div");
+    editor.insertBefore(wrapper, firstChild);
+    wrapper.appendChild(firstChild);
+  }
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function SongEditorTab({
@@ -286,10 +306,12 @@ export default function SongEditorTab({
       }
 
       setLyrics(htmlToLoad);
-      // Set editor innerHTML after React has flushed
+      // Set editor innerHTML after React has flushed, then normalise the first
+      // line so Chrome never treats it as a naked text node.
       requestAnimationFrame(() => {
         if (editorRef.current) {
           editorRef.current.innerHTML = htmlToLoad;
+          normalizeFirstLineNode(editorRef.current);
         }
       });
     } else if (editorState.mode === "create") {
@@ -632,7 +654,12 @@ export default function SongEditorTab({
               contentEditable
               suppressContentEditableWarning
               data-ocid="editor.editor"
-              onInput={() => setLyrics(editorRef.current?.innerHTML ?? "")}
+              onInput={() => {
+                if (editorRef.current) {
+                  normalizeFirstLineNode(editorRef.current);
+                  setLyrics(editorRef.current.innerHTML);
+                }
+              }}
               className="relative w-full min-h-[500px] p-4 rounded-md border font-mono focus:outline-none focus:ring-2 focus:ring-primary"
               style={{
                 backgroundColor: backgroundColor,

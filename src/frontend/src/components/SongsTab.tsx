@@ -223,6 +223,48 @@ export default function SongsTab({
     setExportConfirmDialogOpen(false);
   };
 
+  /** Build the plain-JSON payload for a single song (no bigints). */
+  const buildSongPayload = (song: (typeof allSongs)[number]) => ({
+    id: song.id,
+    title: song.title,
+    artist: song.artist,
+    lyrics: song.lyrics,
+    scrollSpeed: song.scrollSpeed.toString(),
+    linesPerScroll: song.linesPerScroll.toString(),
+    tempo: song.tempo.toString(),
+    backgroundColor: song.backgroundColor,
+    textColor: song.textColor,
+    textSize: song.textSize.toString(),
+    isBold: song.isBold,
+    colorRanges: song.colorRanges.map((r) => ({
+      start: r.start.toString(),
+      end: r.end.toString(),
+      color: r.color,
+    })),
+    createdAt: song.createdAt.toString(),
+    updatedAt: song.updatedAt.toString(),
+    exportDate: new Date().toISOString(),
+    version: "1.0",
+  });
+
+  /** Trigger a direct browser download for a single song (no save-picker). */
+  const downloadSongBlob = (song: (typeof allSongs)[number]) => {
+    const sanitizedTitle = song.title
+      .replace(/[^a-z0-9_\-]/gi, "_")
+      .substring(0, 50);
+    const fileName = `${sanitizedTitle}_song.json`;
+    const json = JSON.stringify(buildSongPayload(song), null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const handleExportAllSongs = async () => {
     if (allSongs.length === 0) {
       toast.error("No songs to export");
@@ -232,75 +274,64 @@ export default function SongsTab({
     setIsExportingAll(true);
 
     try {
-      // Check if File System Access API is supported
-      const supportsFileSystemAccess = "showDirectoryPicker" in window;
+      // Prefer showDirectoryPicker so the user can pick a folder and get
+      // all files written there in one go.
+      const supportsDirectoryPicker = "showDirectoryPicker" in window;
 
-      if (supportsFileSystemAccess) {
+      if (supportsDirectoryPicker) {
         try {
-          // Let user select a directory
-          const dirHandle = await (window as any).showDirectoryPicker();
+          const dirHandle = await (window as any).showDirectoryPicker({
+            mode: "readwrite",
+          });
 
           for (const song of allSongs) {
             const sanitizedTitle = song.title
               .replace(/[^a-z0-9_\-]/gi, "_")
               .substring(0, 50);
             const fileName = `${sanitizedTitle}_song.json`;
+            const json = JSON.stringify(buildSongPayload(song), null, 2);
 
-            // Create or get file handle
             const fileHandle = await dirHandle.getFileHandle(fileName, {
               create: true,
             });
-
-            // Write the file
-            const songData = {
-              id: song.id,
-              title: song.title,
-              artist: song.artist,
-              lyrics: song.lyrics,
-              scrollSpeed: song.scrollSpeed.toString(),
-              linesPerScroll: song.linesPerScroll.toString(),
-              tempo: song.tempo.toString(),
-              backgroundColor: song.backgroundColor,
-              textColor: song.textColor,
-              textSize: song.textSize.toString(),
-              isBold: song.isBold,
-              colorRanges: song.colorRanges.map((r) => ({
-                start: r.start.toString(),
-                end: r.end.toString(),
-                color: r.color,
-              })),
-              createdAt: song.createdAt.toString(),
-              updatedAt: song.updatedAt.toString(),
-              exportDate: new Date().toISOString(),
-              version: "1.0",
-            };
-
-            const json = JSON.stringify(songData, null, 2);
             const writable = await fileHandle.createWritable();
             await writable.write(json);
             await writable.close();
           }
 
           toast.success(
-            `Successfully exported ${allSongs.length} song${allSongs.length !== 1 ? "s" : ""}!`,
+            `Exported ${allSongs.length} song${allSongs.length !== 1 ? "s" : ""} to the selected folder!`,
           );
         } catch (err: any) {
           if (err.name === "AbortError") {
-            // User cancelled
+            // User cancelled the folder picker — do nothing
             return;
           }
-          throw err;
+          // Directory picker failed (e.g. permission denied); fall through to
+          // the individual-download fallback below.
+          console.warn(
+            "showDirectoryPicker failed, falling back to downloads:",
+            err,
+          );
+          toast.info(
+            "Folder access unavailable — downloading songs individually...",
+          );
+          for (const song of allSongs) {
+            downloadSongBlob(song);
+            // Brief pause so the browser doesn't block rapid-fire downloads
+            await new Promise((resolve) => setTimeout(resolve, 150));
+          }
+          toast.success(
+            `Exported ${allSongs.length} song${allSongs.length !== 1 ? "s" : ""}!`,
+          );
         }
       } else {
-        // Fallback: export as multiple downloads
-        toast.info("Exporting songs individually...");
-
+        // Browser doesn't support showDirectoryPicker — download individually
+        toast.info("Downloading songs individually...");
         for (const song of allSongs) {
-          await exportSongMutation.mutateAsync(song);
-          // Small delay to prevent browser blocking multiple downloads
-          await new Promise((resolve) => setTimeout(resolve, 100));
+          downloadSongBlob(song);
+          await new Promise((resolve) => setTimeout(resolve, 150));
         }
-
         toast.success(
           `Exported ${allSongs.length} song${allSongs.length !== 1 ? "s" : ""}!`,
         );
